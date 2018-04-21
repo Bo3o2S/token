@@ -6,49 +6,37 @@ import "zeppelin-solidity/contracts/math/SafeMath.sol";
 import "zeppelin-solidity/contracts/ownership/Whitelist.sol";
 import "zeppelin-solidity/contracts/lifecycle/Pausable.sol";
 import "../token/ABL.sol";
+import "../util/OnlyOnce.sol";
 
 
-contract PresaleFirst is Whitelist, Pausable {
+contract PresaleFirst is Whitelist, Pausable, OnlyOnce {
     using SafeMath for uint256;
     using SafeERC20 for ERC20;
 
-    uint256 public startTime;
-    uint256 public endTime;
-    uint256 public maxcap;
-    uint256 public exceed;
-    uint256 public minimum;
-    uint256 public rate;
+    uint256 public constant maxcap = 1500 ether;
+    uint256 public constant exceed = 300 ether;
+    uint256 public constant minimum = 0.5 ether;
+    uint256 public constant rate = 11500;
 
+    uint256 public startNumber;
+    uint256 public endNumber;
     uint256 public weiRaised;
     address public wallet;
     ERC20 public token;
 
     function PresaleFirst (
-        uint256 _startTime,
-        uint256 _endTime,
-        uint256 _maxcap,
-        uint256 _exceed,
-        uint256 _minimum,
+        uint256 _startNumber,
+        uint256 _endNumber,
         address _wallet,
-        address _token,
-        uint256 _rate
+        address _token
         ) public {
         require(_wallet != address(0));
         require(_token != address(0));
 
-        require(_maxcap == 1500 ether);
-        require(_exceed == 300 ether);
-        require(_minimum == 0.5 ether);
-        require(_rate == 11500);
-
-        startTime = _startTime;
-        endTime = _endTime;
-        maxcap = _maxcap;
-        exceed = _exceed;
-        minimum = _minimum;
+        startNumber = _startNumber;
+        endNumber = _endNumber;
         wallet = _wallet;
         token = ERC20(_token);
-        rate = _rate;
         weiRaised = 0;
     }
 
@@ -74,14 +62,14 @@ contract PresaleFirst is Whitelist, Pausable {
         }
 
         uint256 purchase = getPurchaseAmount(_buyer);
-        uint256 refund = msg.value.sub(purchase);
+        uint256 refund = (msg.value).sub(purchase);
 
         // refund
         _buyer.transfer(refund);
 
         // buy
         uint256 tokenAmount = purchase.mul(rate);
-        maxcap = maxcap.sub(purchase);
+        weiRaised = weiRaised.add(purchase);
 
         // wallet
         buyers[_buyer] = buyers[_buyer].add(purchase);
@@ -97,8 +85,7 @@ contract PresaleFirst is Whitelist, Pausable {
         bool a = msg.value >= minimum;
 
         // sale duration
-        uint256 time = block.timestamp;
-        bool b = time > startTime && time < endTime;
+        bool b = block.number > startNumber && block.number < endNumber;
 
         return a && b;
     }
@@ -128,24 +115,12 @@ contract PresaleFirst is Whitelist, Pausable {
     }
 
 //////////////////
-//  once
-//////////////////
-
-    bool once = false;
-
-    modifier onlyOnce() {
-        require(!once);
-        _;
-    }
-
-//////////////////
 //  release
 //////////////////
 
     // TODO : change block.timestamp to number
     function release() external onlyOwner onlyOnce {
-        require(block.timestamp > endTime);
-        once = true;
+        require(block.number > endNumber);
 
         wallet.transfer(address(this).balance);
 
