@@ -6,10 +6,9 @@ import "zeppelin-solidity/contracts/math/SafeMath.sol";
 import "zeppelin-solidity/contracts/ownership/Whitelist.sol";
 import "zeppelin-solidity/contracts/lifecycle/Pausable.sol";
 import "../token/ABL.sol";
-import "../util/OnlyOnce.sol";
 
 
-contract PresaleFirst is Whitelist, Pausable, OnlyOnce {
+contract PresaleFirst is Whitelist, Pausable {
     using SafeMath for uint256;
     using SafeERC20 for ERC20;
 
@@ -43,6 +42,7 @@ contract PresaleFirst is Whitelist, Pausable, OnlyOnce {
 //////////////////
 //  collect eth
 //////////////////
+
     mapping (address => uint256) public buyers;
     address[] private keys;
 
@@ -85,7 +85,7 @@ contract PresaleFirst is Whitelist, Pausable, OnlyOnce {
         bool a = msg.value >= minimum;
 
         // sale duration
-        bool b = block.number > startNumber && block.number < endNumber;
+        bool b = block.number >= startNumber && block.number <= endNumber;
 
         return a && b;
     }
@@ -98,7 +98,7 @@ contract PresaleFirst is Whitelist, Pausable, OnlyOnce {
     function checkOverExceed(address _buyer) private constant returns (uint256) {
         if(msg.value >= exceed) {
             return exceed;
-        } else if(msg.value.add(buyers[_buyer]) > exceed) {
+        } else if(msg.value.add(buyers[_buyer]) >= exceed) {
             return exceed.sub(buyers[_buyer]);
         } else {
             return msg.value;
@@ -117,10 +117,11 @@ contract PresaleFirst is Whitelist, Pausable, OnlyOnce {
 //////////////////
 //  release
 //////////////////
+    bool finalized = false;
 
-    // TODO : change block.timestamp to number
-    function release() external onlyOwner onlyOnce {
-        require(block.number > endNumber);
+    function release() external onlyOwner {
+        require(!finalized);
+        require(weiRaised >= maxcap || block.number >= endNumber);
 
         wallet.transfer(address(this).balance);
 
@@ -128,19 +129,29 @@ contract PresaleFirst is Whitelist, Pausable, OnlyOnce {
             token.safeTransfer(keys[i], buyers[keys[i]].mul(rate));
             emit Release(keys[i], buyers[keys[i]].mul(rate));
         }
-    }
 
-    // TODO : withdraw 만들기
-    function withdraw() external onlyOwner {
-        token.safeTransfer(wallet, token.balanceOf(this));
-        emit Withdraw(wallet, token.balanceOf(this));
+        withdraw();
+
+        finalized = true;
     }
 
     function refund() external onlyOwner {
+        require(!finalized);
+        pause();
+
+        withdraw();
+
         for(uint256 i = 0; i < keys.length; i++) {
             keys[i].transfer(buyers[keys[i]]);
-            emit Refund(keys[i], buyers[keys[i]].mul(rate));
+            emit Refund(keys[i], buyers[keys[i]]);
         }
+
+        finalized = true;
+    }
+
+    function withdraw() public onlyOwner {
+        token.safeTransfer(wallet, token.balanceOf(this));
+        emit Withdraw(wallet, token.balanceOf(this));
     }
 
 //////////////////
